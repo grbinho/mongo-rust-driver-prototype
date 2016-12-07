@@ -25,6 +25,7 @@ separator = "0.3.1"
 textnonce = { version = "0.4.1", default-features = false }
 time = "0.1.35"
 bufstream = "0.1.1"
+native-tls = "0.1"
 
 [dev-dependencies]
 nalgebra = "0.10.1"

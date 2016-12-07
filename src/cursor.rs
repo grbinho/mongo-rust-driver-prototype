@@ -25,10 +25,11 @@
 //! ```
 use {Client, CommandType, Error, ErrorCode, Result, ThreadedClient};
 use apm::{CommandStarted, CommandResult, EventRunner};
+use buf_connection::BufConnection;
 
 use bson::{self, Bson};
 use common::{ReadMode, ReadPreference};
-use pool::PooledStream;
+use pool::{PooledStream};
 use time;
 use wire_protocol::flags::OpQueryFlags;
 use wire_protocol::operations::Message;
@@ -287,13 +288,15 @@ impl Cursor {
 
         let mut stream = stream;
         let mut socket = stream.get_socket();
+
         let req_id = client.get_req_id();
 
         let index = namespace.find('.').unwrap_or(namespace.len());
         let db_name = String::from(&namespace[..index]);
         let coll_name = String::from(&namespace[index + 1..]);
         let cmd_name = cmd_type.to_str();
-        let connstring = format!("{}", try!(socket.get_ref().peer_addr()));
+        let peer_addr = try!(socket.get_ref().peer_addr());
+        let connstring = format!("{}", &peer_addr);
 
         let filter: bson::Document = match query.get("$query") {
             Some(&Bson::Document(ref doc)) => doc.clone(),

@@ -1,4 +1,8 @@
+
 //! Connection pooling for a single MongoDB server.
+use native_tls::{TlsConnector,TlsStream};
+use buf_connection::BufConnection;
+
 use Error::{ArgumentError, OperationError};
 use Result;
 
@@ -15,7 +19,7 @@ pub static DEFAULT_POOL_SIZE: usize = 5;
 #[derive(Clone)]
 pub struct ConnectionPool {
     /// The connection host.
-    pub host: Host,
+    pub host: Host,  
     // The socket pool.
     inner: Arc<Mutex<Pool>>,
     // A condition variable used for threads waiting for the pool
@@ -23,13 +27,17 @@ pub struct ConnectionPool {
     wait_lock: Arc<Condvar>,
 }
 
+// Better approach is to build struct of BufConnection
+// that shares BufStream traits and can either use TcpStream or TlsStream
+
+
 struct Pool {
     /// The maximum number of concurrent connections allowed.
     pub size: usize,
     // The current number of open connections.
     pub len: Arc<AtomicUsize>,
     // The idle socket pool.
-    sockets: Vec<BufStream<TcpStream>>,
+    sockets: Vec<BufConnection>,
     // The pool iteration. When a server monitor fails to execute ismaster,
     // the connection pool is cleared and the iteration is incremented.
     iteration: usize,
@@ -40,7 +48,7 @@ struct Pool {
 pub struct PooledStream {
     // This socket option will always be Some(stream) until it is
     // returned to the pool using take().
-    socket: Option<BufStream<TcpStream>>,
+    socket: Option<BufConnection>,
     // A reference to the pool that the stream was taken from.
     pool: Arc<Mutex<Pool>>,
     // A reference to the waiting condvar associated with the pool.
@@ -51,7 +59,7 @@ pub struct PooledStream {
 
 impl PooledStream {
     /// Returns a reference to the socket.
-    pub fn get_socket(&mut self) -> &mut BufStream<TcpStream> {
+pub fn get_socket(&mut self) -> &mut BufConnection {
         self.socket.as_mut().unwrap()
     }
 }
@@ -131,10 +139,15 @@ impl ConnectionPool {
                 });
             }
 
+            println!("Host {} is using SSL: {}", self.host.host_name, self.host.use_ssl);
+
             // Attempt to make a new connection
             let len = locked.len.load(Ordering::SeqCst);
             if len < locked.size {
-                let socket = try!(self.connect());
+                let socket = match self.host.use_ssl {
+                    true => try!(self.connect_ssl()),
+                    false => try!(self.connect())
+                };
                 let _ = locked.len.fetch_add(1, Ordering::SeqCst);
                 return Ok(PooledStream {
                     socket: Some(socket),
@@ -150,10 +163,25 @@ impl ConnectionPool {
     }
 
     // Connects to a MongoDB server as defined by the initial configuration.
-    fn connect(&self) -> Result<BufStream<TcpStream>> {
+    fn connect(&self) -> Result<BufConnection> { 
+
+        println!("Connection over TCP");
+
         let host_name = &self.host.host_name;
         let port = self.host.port;
         let stream = BufStream::new(try!(TcpStream::connect((&host_name[..], port))));
-        Ok(stream)
+        Ok(BufConnection::new_tcp(stream))
+    }
+
+    fn connect_ssl(&self) -> Result<BufConnection> {
+
+        println!("Connection over SSL");
+
+        let connector = TlsConnector::builder().unwrap().build().unwrap();
+        let host_name = &self.host.host_name;
+        let port = self.host.port;
+        let stream = try!(TcpStream::connect((&host_name[..], port)));
+        let stream = BufStream::new(connector.connect(host_name, stream).unwrap());
+        Ok(BufConnection::new_tls(stream))
     }
 }

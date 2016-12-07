@@ -102,6 +102,7 @@ extern crate separator;
 extern crate textnonce;
 extern crate time;
 extern crate bufstream;
+extern crate native_tls;
 
 pub mod db;
 pub mod coll;
@@ -113,6 +114,7 @@ pub mod gridfs;
 pub mod pool;
 pub mod topology;
 pub mod wire_protocol;
+pub mod buf_connection;
 
 mod apm;
 mod auth;

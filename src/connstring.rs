@@ -16,6 +16,8 @@ pub struct Host {
     pub ipc: String,
     /// The port to communicate on.
     pub port: u16,
+    /// Is this host usint SSL
+    pub use_ssl: bool
 }
 
 impl Host {
@@ -25,6 +27,7 @@ impl Host {
             host_name: host_name,
             port: port,
             ipc: String::new(),
+            use_ssl: false
         }
     }
 
@@ -33,6 +36,7 @@ impl Host {
             host_name: String::new(),
             port: DEFAULT_PORT,
             ipc: ipc,
+            use_ssl: false
         }
     }
 
@@ -108,7 +112,7 @@ pub fn parse(address: &str) -> Result<ConnectionString> {
     // Remove scheme
     let addr = &address[URI_SCHEME.len()..];
 
-    let hosts: Vec<Host>;
+    let mut hosts: Vec<Host>;
     let mut user: Option<String> = None;
     let mut password: Option<String> = None;
     let mut database: Option<String> = Some(String::from("test"));
@@ -160,9 +164,36 @@ pub fn parse(address: &str) -> Result<ConnectionString> {
         }
     }
 
-    // Collect options if any exist
     if !opts.is_empty() {
-        options = Some(split_options(opts).unwrap());
+        options = Some(split_options(opts).unwrap()); 
+ 
+    }    
+
+    
+
+    {        
+        // If options contains ssl=true, we need to update hosts to reflect that.
+        // This will tickle down to the connection poll and in the end to the buffered stream
+        let ssl_value = match options {
+            Some(ref option) => option.get("ssl").unwrap().as_str(),
+            None => "false"
+        };
+
+        println!("SSL value of Connection string is {}", ssl_value);
+
+        match ssl_value {
+            "true" => {
+                for h in &mut hosts {
+                    h.use_ssl = true;
+                }
+            }
+            _ => {
+                 for h in &mut hosts {
+                    h.use_ssl = false;
+                }
+            }
+        };
+
     }
 
     Ok(ConnectionString {
